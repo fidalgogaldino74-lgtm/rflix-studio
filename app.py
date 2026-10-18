@@ -3,6 +3,7 @@ import edge_tts
 import asyncio
 import os
 from datetime import datetime
+import urllib.parse
 
 st.set_page_config(page_title="RFlix Studio", page_icon="🎬", layout="wide")
 
@@ -47,7 +48,7 @@ st.title("🎬 RFlix Studio")
 st.markdown("---")
 
 # ==========================================
-# 🎙️ ABA 1 — GERAR VOZ
+# 🎙️ ABA 1 — GERAR VOZ (continua igual!)
 # ==========================================
 if aba == "🎙️ Gerar Voz":
     st.header("🎙️ Criar nova fala")
@@ -92,13 +93,12 @@ if aba == "🎙️ Gerar Voz":
                     st.error("❌ Erro. Tente novamente.")
 
 # ==========================================
-# 🎬 ABA 2 — GERAR VÍDEO — MODELO WAN 3.0
+# 🎬 ABA 2 — GERAR VÍDEO — SEM TOKEN!
 # ==========================================
 elif aba == "🎬 Gerar Vídeo":
-    st.header("🎬 Criar vídeo com IA")
-    replicate_token = st.text_input("🔑 Token do Replicate", type="password", placeholder="Cole seu token aqui: r8_...", help="Crie gratuitamente em: replicate.com/account/tokens")
+    st.header("🎬 Criar vídeo com IA — Sem crédito que acaba! 🎉")
     
-    prompt = st.text_area("✍️ Descreva o vídeo que você quer:", height=150, placeholder="Ex: Um cachorro golden retriever correndo na praia ao pôr do sol, filmagem em 4k, cinematográfico...")
+    prompt = st.text_area("✍️ Descreva o vídeo que você quer:", height=150, placeholder="Ex: Uma mulher entra em uma sala com expressão de surpresa, estilo de novela, iluminação natural...")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -110,49 +110,56 @@ elif aba == "🎬 Gerar Vídeo":
             "Futurista / Sci-Fi"
         ])
     with col2:
-        proporcao = st.selectbox("📐 Formato/Proporção:", ["16:9 (Horizontal/YouTube)", "9:16 (Vertical/TikTok)", "1:1 (Quadrado)"])
-        
-    st.markdown("💡 **Dica de prompt:** Seja detalhado! Descreva os movimentos, a iluminação e o clima. Quanto mais detalhes, melhor o resultado!")
+        proporcao = st.selectbox("📐 Formato/Proporção:", ["16:9 (Horizontal/YouTube)", "9:16 (Vertical/TikTok/Reels)", "1:1 (Quadrado)"])
     
-    if st.button("🎬 Gerar Vídeo", type="primary", use_container_width=True):
-        if not replicate_token.startswith("r8_"):
-            st.warning("⚠️ Cole seu token do Replicate primeiro! Crie gratuitamente em replicate.com")
-        elif not prompt.strip():
-            st.warning("⚠️ Descreva seu vídeo acima!")
-        else:
-            with st.spinner("🎬 Sua IA está no estúdio criando o vídeo... Pode levar de 1 a 3 minutos..."):
-                try:
-                    import replicate
-                    os.environ["REPLICATE_API_TOKEN"] = replicate_token
-                    
-                    prompt_completo = f"{prompt}, style: {estilo}"
-                    
-                    aspect_map = {
-                        "16:9 (Horizontal/YouTube)": "16:9",
-                        "9:16 (Vertical/TikTok)": "9:16",
-                        "1:1 (Quadrado)": "1:1"
-                    }
-                    
-                    output = replicate.run(
-                        "alibaba/wan-3",
-                        input={
-                            "prompt": prompt_completo,
-                            "aspect_ratio": aspect_map[proporcao]
-                        }
-                    )
-                    
-                    video_url = output[0] if isinstance(output, list) else output
-                    
-                    data_hora = datetime.now().strftime("%d/%m %H:%M")
-                    salvar_no_historico(estilo, prompt, data_hora, tipo="video")
-                    
-                    st.success("✅ Vídeo pronto! 🎉")
-                    st.video(video_url)
-                    st.markdown(f"🔗 **Link do vídeo:** [{video_url}]({video_url})")
-                    st.caption("💡 Clique nos três pontinhos no canto do vídeo ou use o link para salvar no seu dispositivo.")
-                except Exception as e:
-                    st.error(f"❌ Erro: Verifique seu token ou tente novamente mais tarde.")
-                    st.info(f"Detalhe do erro: {str(e)[:150]}")
+    st.markdown("💡 **Dica de prompt:** Seja detalhado! Descreva os personagens, a ação, a iluminação e o clima. Quanto mais detalhes, melhor o resultado!")
+    
+    st.markdown("---")
+    
+    opcao = st.radio(
+        "🌐 Escolha onde gerar seu vídeo:",
+        ["🌐 Wan2.video — Sem cadastro, direto!", "☁️ Hugging Face Space — Crie seu próprio gerador grátis"],
+        label_visibility="collapsed"
+    )
+    
+    prompt_completo = f"{prompt}, estilo: {estilo}" if prompt else ""
+    proporcao_map = {
+        "16:9 (Horizontal/YouTube)": "16:9",
+        "9:16 (Vertical/TikTok/Reels)": "9:16",
+        "1:1 (Quadrado)": "1:1"
+    }
+    prop = proporcao_map[proporcao]
+    
+    if opcao == "🌐 Wan2.video — Sem cadastro, direto!":
+        st.info("💡 O Wan2.video é gratuito, não precisa de conta nem token! Basta copiar sua descrição, gerar e voltar aqui para salvar no histórico.")
+        
+        wan_link = f"https://wan2.video/?q={urllib.parse.quote(prompt_completo)}&ar={prop}" if prompt_completo else "https://wan2.video"
+        
+        if st.button("🚀 Abrir Wan2.video e Gerar", type="primary", use_container_width=True, disabled=not prompt.strip()):
+            data_hora = datetime.now().strftime("%d/%m %H:%M")
+            salvar_no_historico(estilo, prompt, data_hora, tipo="video")
+            st.success("✅ Salvo no histórico! Clique no link abaixo 👇")
+            st.markdown(f"### 👉 [Clique aqui para gerar seu vídeo]({wan_link})")
+            st.caption("Copie sua descrição acima, cole no site e gere! Depois é só baixar e usar 😊")
+    
+    else:
+        st.info("💡 Com o Hugging Face você cria seu próprio espaço de geração de vídeos — grátis, sem crédito que acaba!")
+        
+        hf_prompt = urllib.parse.quote(prompt_completo)
+        st.markdown(f"""
+        ### 📌 Passo a passo:
+        1. Crie uma conta grátis em **huggingface.co**
+        2. Vá em **Spaces → New Space → procure "Wan2.2"**
+        3. Use o modelo público — não precisa instalar nada!
+        4. Cole sua descrição e gere seus vídeos lá mesmo
+        
+        ✅ **Nunca acaba crédito!** Pode gerar quantas vezes quiser — só pode ter fila em horários de pico.
+        """)
+        
+        if st.button("📝 Salvar no Histórico", type="primary", use_container_width=True, disabled=not prompt.strip()):
+            data_hora = datetime.now().strftime("%d/%m %H:%M")
+            salvar_no_historico(estilo, prompt, data_hora, tipo="video")
+            st.success("✅ Salvo no histórico! Vá ao Hugging Face para gerar 😊")
 
 # ==========================================
 # 📂 ABA 3 — MEUS ARQUIVOS
@@ -203,23 +210,22 @@ elif aba == "ℹ️ Sobre":
     st.markdown("""
     O **RFlix Studio** é uma plataforma completa de criação de conteúdo com Inteligência Artificial.
     
-    ✅ **🎙️ Gerar Voz:** Converta texto em áudio com vozes naturais.
-    ✅ **🎬 Gerar Vídeo:** Descreva cenas e a IA cria vídeos com o modelo **Wan 3.0**.
+    ✅ **🎙️ Gerar Voz:** Converta texto em áudio com vozes naturais — totalmente grátis e ilimitado!
+    ✅ **🎬 Gerar Vídeo:** Descreva cenas e gere vídeos — sem token, sem crédito que acaba!
     ✅ **📂 Histórico:** Acesse e gerencie todas suas criações.
     
-    📌 **Como usar os vídeos:**
-    1. Crie sua conta gratuita em **replicate.com**
-    2. Copie seu token em: replicate.com/account/tokens
-    3. Cole o token na aba "Gerar Vídeo"
-    4. Escreva sua descrição e clique em "Gerar Vídeo"
-    5. Aguarde de 1 a 3 minutos — vale a pena! ✨
+    🎯 **Como gerar vídeos — Sem token!**
+    1. Escreva sua descrição aqui no RFlix Studio
+    2. Escolha: **Wan2.video** (rápido, sem cadastro) OU **Hugging Face** (seu próprio espaço)
+    3. Clique para abrir o site externo — sua descrição já vai pronta lá!
+    4. Gere, baixe e volte aqui para salvar no histórico
     
-    💡 **Dica:** Sempre baixe seus arquivos logo após gerar. O histórico é uma referência, mas os arquivos ficam salvos com você!
+    💡 **Por que assim?** Gerar vídeo com IA precisa de servidores potentes. Em vez de depender de tokens que acabam, usamos plataformas gratuitas que não têm limite de crédito — você só clica, gera e volta! 😊
     
     ---
-    *Versão 1.3 — Wan 3.0 Integrado* 🚀🎬
+    *Versão 2.0 — Sem Token! Sem Crédito que acaba!* 🚀🎬
     """)
 
 st.sidebar.markdown("---")
-st.sidebar.success("✅ Passo 3 concluído! RFlix Studio completo! 🎉")
-    
+st.sidebar.success("✅ RFlix Studio atualizado! Sem token! 🎉")
+            
