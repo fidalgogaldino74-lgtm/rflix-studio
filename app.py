@@ -91,6 +91,7 @@ def aplicar_tema():
     div.stButton>button {{border-radius:7px;font-weight:bold;}}
     [data-testid="stImage"] img {{border-radius:8px;}}
     .destaque {{color:{destaque}}}
+    .detalhes-box {{background:rgba(30,30,40,0.7);padding:25px;border-radius:12px;margin:20px 0;border:1px solid #333;}}
     </style>
     """, unsafe_allow_html=True)
 
@@ -153,6 +154,90 @@ def botao_compartilhar(filme):
     filme_id = filme.get("id")
     link = f"https://www.themoviedb.org/movie/{filme_id}"
     return f'<a href="{link}" target="_blank" style="display:inline-block;padding:6px 12px;background:#1e88d9;color:white;border-radius:6px;text-decoration:none;font-size:14px;margin:8px 0;">🔗 Compartilhar no TMDB</a>'
+
+
+# =========================
+# 🎬 FUNÇÃO: EXIBIR DETALHES DO FILME
+# =========================
+def exibir_detalhes_filme(filme):
+    """Exibe os detalhes completos de um filme em uma seção destacada"""
+    if not filme:
+        return
+
+    st.markdown('<div class="detalhes-box">', unsafe_allow_html=True)
+    
+    # Cabeçalho com título e botão fechar
+    col_titulo, col_fechar = st.columns([5, 1])
+    with col_titulo:
+        st.header(f"🎬 {nome_filme(filme)}")
+    with col_fechar:
+        if st.button("✖ Fechar", type="primary", use_container_width=True):
+            st.session_state.selected_movie = None
+            st.rerun()
+
+    filme_id = filme.get("id")
+    eh_fav = eh_favorito(filme_id)
+    fav_text = "❤️ Salvo" if eh_fav else "🤍 Salvar"
+    
+    # Layout: Capa + Informações lado a lado
+    col_poster, col_info = st.columns([1, 2])
+    
+    with col_poster:
+        st.image(imagem_filme(filme), width=280, caption="")
+        if st.button(fav_text, key="fav_detalhe"):
+            alternar_favorito(filme)
+            st.rerun()
+        st.markdown(botao_compartilhar(filme), unsafe_allow_html=True)
+    
+    with col_info:
+        st.subheader("📋 Sobre este filme")
+        st.write(filme.get("overview") or "Sinopse indisponível.")
+        st.markdown("---")
+        st.write(f"📅 **Data de lançamento:** {filme.get('release_date') or 'Não informada'}")
+        st.write(f"⭐ **Avaliação:** {filme.get('vote_average', 0):.1f}/10 — baseado em {filme.get('vote_count', 0)} votos")
+        
+        if filme.get("genre_ids"):
+            nomes_generos = [GENEROS.get(g, "") for g in filme.get("genre_ids", []) if g in GENEROS]
+            st.write(f"🎭 **Gêneros:** {', '.join(nomes_generos)}")
+        
+        st.write(f"🌐 **Idioma original:** {filme.get('original_language', 'desconhecido').upper()}")
+    
+    st.markdown("---")
+    
+    # Trailer embaixo, ocupando largura total
+    st.subheader("▶ Trailer Oficial")
+    videos_data = tmdb_get(f"/movie/{filme_id}/videos", {"language": "pt-BR"})
+    trailers = []
+    if videos_data:
+        trailers = [v for v in videos_data.get("results", []) 
+                    if v.get("site") == "YouTube" and v.get("type") in ("Trailer", "Teaser")]
+    if trailers:
+        trailer = trailers[0]
+        st.video(f"{YOUTUBE_URL}{trailer['key']}")
+    else:
+        st.info("🎬 Nenhum trailer disponível no momento.")
+        st.markdown(f"[🔎 Ver mais informações no TMDB](https://www.themoviedb.org/movie/{filme_id})")
+    
+    st.markdown("---")
+    
+    # Vídeos autorizados cadastrados
+    correspondencias = [
+        v for v in st.session_state.my_videos
+        if v["title"].strip().casefold() == nome_filme(filme).strip().casefold()
+    ]
+    if correspondencias:
+        st.subheader("🎬 Vídeo disponível")
+        for video in correspondencias:
+            st.video(video["url"])
+    else:
+        st.info(
+            "ℹ️ A TMDB fornece informações, sinopse e trailers oficiais, "
+            "mas não disponibiliza o filme completo por questões de direitos autorais."
+        )
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("")
+
 
 # =========================
 # CABEÇALHO
@@ -234,6 +319,10 @@ def mostrar_fileira(titulo, filmes, chave, mostrar_genero=False):
     if not filmes:
         st.info("Nenhum filme encontrado nesta seção.")
         return
+    
+    # Se um filme desta fileira estiver selecionado, mostre os detalhes logo abaixo
+    detalhes_abaixo = False
+    
     colunas = st.columns(5)
     for indice, filme in enumerate(filmes[:20]):
         fid = filme.get("id")
@@ -258,7 +347,17 @@ def mostrar_fileira(titulo, filmes, chave, mostrar_genero=False):
                     st.session_state.selected_movie = filme
                     st.rerun()
             st.markdown(botao_compartilhar(filme), unsafe_allow_html=True)
+            
+            # Verifica se este é o filme selecionado
+            if st.session_state.selected_movie and st.session_state.selected_movie.get("id") == fid:
+                detalhes_abaixo = True
+    
     st.markdown("---")
+    
+    # ✅ Mostra os detalhes logo ABAIXO da fileira onde o filme foi clicado
+    if detalhes_abaixo and st.session_state.selected_movie:
+        exibir_detalhes_filme(st.session_state.selected_movie)
+
 
 # =========================
 # ABA: MEUS FAVORITOS
@@ -307,61 +406,6 @@ else:
     mostrar_fileira("🎞️ Mais Populares", populares, "pop")
     avaliados = carregar_filmes("/movie/top_rated", {"language": "pt-BR", "page": 1})
     mostrar_fileira("⭐ Mais Bem Avaliados", avaliados, "nota")
-
-# =========================
-# DETALHES DO FILME
-# =========================
-filme = st.session_state.selected_movie
-if filme:
-    st.markdown("---")
-    col_titulo, col_fav = st.columns([5, 1])
-    with col_titulo:
-        st.header(nome_filme(filme))
-    with col_fav:
-        filme_id = filme.get("id")
-        eh_fav = eh_favorito(filme_id)
-        fav_text = "❤️ Salvo" if eh_fav else "🤍 Salvar"
-        if st.button(fav_text, key="fav_detalhe"):
-            alternar_favorito(filme)
-            st.rerun()
-    poster_url = imagem_filme(filme)
-    st.image(poster_url, width=300, caption="")
-    st.markdown(botao_compartilhar(filme), unsafe_allow_html=True)
-    st.markdown("")
-    st.subheader("📋 Sobre este filme")
-    st.write(filme.get("overview") or "Sinopse indisponível.")
-    st.markdown("---")
-    st.write(f"📅 **Data de lançamento:** {filme.get('release_date') or 'Não informada'}")
-    st.write(f"⭐ **Avaliação:** {filme.get('vote_average', 0):.1f}/10 — baseado em {filme.get('vote_count', 0)} votos")
-    if filme.get("genre_ids"):
-        nomes_generos = [GENEROS.get(g, "") for g in filme.get("genre_ids", []) if g in GENEROS]
-        st.write(f"🎭 **Gêneros:** {', '.join(nomes_generos)}")
-    st.write(f"🌐 **Idioma original:** {filme.get('original_language', 'desconhecido').upper()}")
-    st.markdown("---")
-    st.subheader("▶ Trailer Oficial")
-    videos_data = tmdb_get(f"/movie/{filme_id}/videos", {"language": "pt-BR"})
-    trailers = []
-    if videos_data:
-        trailers = [v for v in videos_data.get("results", []) if v.get("site") == "YouTube" and v.get("type") in ("Trailer", "Teaser")]
-    if trailers:
-        trailer = trailers[0]
-        st.video(f"{YOUTUBE_URL}{trailer['key']}")
-    else:
-        st.info("🎬 Nenhum trailer disponível no momento.")
-        st.markdown(f"[🔎 Ver mais informações no TMDB](https://www.themoviedb.org/movie/{filme_id})")
-    st.markdown("---")
-    correspondencias = [v for v in st.session_state.my_videos if v["title"].strip().casefold() == nome_filme(filme).strip().casefold()]
-    if correspondencias:
-        st.subheader("🎬 Vídeo disponível")
-        for video in correspondencias:
-            st.video(video["url"])
-    else:
-        st.info("ℹ️ A TMDB fornece informações, sinopse e trailers oficiais, mas não disponibiliza o filme completo por questões de direitos autorais.")
-    st.markdown("")
-    if st.button("✖ Fechar detalhes", type="primary"):
-        st.session_state.selected_movie = None
-        st.rerun()
-    st.markdown("---")
 
 # =========================
 # CINEMA GRATUITO
@@ -425,3 +469,4 @@ else:
 st.markdown("---")
 st.caption("RFlix — Projeto independente. Dados e imagens fornecidos pela TMDB, mas não endossado nem certificado pela TMDB. Os filmes completos não são hospedados aqui — apenas informações, cartazes e trailers oficiais. Assista sempre por plataformas autorizadas.")
 st.caption("TMDB: https://www.themoviedb.org/")
+    
