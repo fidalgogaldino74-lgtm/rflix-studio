@@ -1,515 +1,351 @@
 
-import streamlit as st
-import edge_tts
-import asyncio
 import os
 import requests
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import quote
+import streamlit as st
 
-# ==========================================
-# CONFIGURAÇÃO DO RFLIX STUDIO
-# ==========================================
-
+# =========================
+# CONFIGURAÇÃO DA RFLIX
+# =========================
 st.set_page_config(
-    page_title="RFlix Studio",
+    page_title="RFlix | Seu cinema",
     page_icon="🎬",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-PASTA = Path(".")
-HISTORICO = PASTA / "historico.txt"
-HISTORICO_VIDEOS = PASTA / "historico_videos.txt"
-ARQUIVO_AUDIO = PASTA / "ultimo_audio.mp3"
-
-VOZES = {
-    "👩 LARISSA — Jovem, animada e suave":
-        "pt-BR-AntonioNeural",
-    "👩 JULIA — Jovem, clara e gentil":
-        "pt-BR-FranciscaNeural",
-    "👨 PEDRO — Jovem, amigável e energético":
-        "pt-BR-AntonioNeural"
-}
+API_URL = "https://api.themoviedb.org/3"
+IMAGE_URL = "https://image.tmdb.org/t/p/w500"
 
 st.markdown("""
 <style>
 .stApp {
-    background-color: #071a35;
+    background: #090b10;
     color: white;
 }
-h1, h2, h3 {
-    color: #f4c95d;
+header[data-testid="stHeader"] {
+    background: #090b10;
 }
-.stButton button {
-    border-radius: 10px;
+section[data-testid="stSidebar"] {
+    background: #151923;
+}
+h1, h2, h3 {
+    color: white;
+}
+.movie-title {
+    font-size: 15px;
     font-weight: bold;
+    min-height: 40px;
+}
+div.stButton > button {
+    border-radius: 7px;
+    font-weight: bold;
+}
+[data-testid="stImage"] img {
+    border-radius: 8px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎬 RFlix Studio")
-st.caption("Seu estúdio para criar histórias, vozes e projetos de vídeo.")
+# A chave fica nos Secrets do Streamlit.
+# Nunca coloque o token diretamente neste arquivo.
+try:
+    TMDB_TOKEN = st.secrets.get("TMDB_BEARER_TOKEN", "")
+except Exception:
+    TMDB_TOKEN = os.environ.get("TMDB_BEARER_TOKEN", "")
 
-# ==========================================
-# FUNÇÕES AUXILIARES
-# ==========================================
+if "selected_movie" not in st.session_state:
+    st.session_state.selected_movie = None
 
-def salvar_historico(arquivo, texto):
-    with open(arquivo, "a", encoding="utf-8") as f:
-        f.write(texto + "\n\n")
+if "my_videos" not in st.session_state:
+    st.session_state.my_videos = []
 
+# =========================
+# CONSULTA À TMDB
+# =========================
+def tmdb_get(endpoint, params=None):
+    if not TMDB_TOKEN:
+        return None
 
-def ler_arquivo(arquivo):
-    if arquivo.exists():
-        return arquivo.read_text(encoding="utf-8")
-    return ""
+    headers = {
+        "Authorization": f"Bearer {TMDB_TOKEN}",
+        "accept": "application/json"
+    }
 
-
-async def criar_audio(texto, voz, destino):
-    comunicacao = edge_tts.Communicate(texto, voz)
-    await comunicacao.save(str(destino))
-
-
-def gerar_roteiro_gemini(ideia, genero, duracao, personagens):
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
-
-    if not api_key:
-        raise ValueError(
-            "A chave GEMINI_API_KEY não está configurada "
-            "nos Secrets do Streamlit."
+    try:
+        response = requests.get(
+            f"{API_URL}{endpoint}",
+            headers=headers,
+            params=params or {},
+            timeout=20
         )
-
-    url = (
-        "https://generativelanguage.googleapis.com/"
-        "v1beta/models/gemini-flash-latest:generateContent"
-    )
-
-    prompt = f"""
-Crie um roteiro ORIGINAL para uma novela da RFlix Studio.
-
-Gênero: {genero}
-Duração desejada: {duracao}
-Ideia central: {ideia}
-Personagens: {personagens or "Crie personagens originais"}
-
-Escreva em português brasileiro, com linguagem natural.
-
-Organize o episódio em:
-1. Título.
-2. Abertura que prenda a atenção.
-3. Cenas numeradas em ordem.
-4. Descrição visual de cada cena.
-5. Diálogos naturais, com o nome de quem fala.
-6. Emoções, expressões e ações dos personagens.
-7. Indicações de som ou música quando forem úteis.
-8. Um final envolvente que desperte curiosidade pelo próximo episódio.
-
-Adapte o tamanho à duração desejada. Crie uma história original.
-"""
-
-    resposta = requests.post(
-        url,
-        headers={
-            "Content-Type": "application/json",
-            "X-goog-api-key": api_key
-        },
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ]
-        },
-        timeout=90
-    )
-
-    if not resposta.ok:
-        raise RuntimeError(
-            f"Erro da API Gemini ({resposta.status_code}): "
-            f"{resposta.text[:700]}"
-        )
-
-    dados = resposta.json()
-    candidatos = dados.get("candidates", [])
-
-    if not candidatos:
-        raise RuntimeError(
-            "O Gemini não retornou um roteiro. "
-            "Tente mudar a ideia ou verificar os limites da API."
-        )
-
-    partes = candidatos[0].get("content", {}).get("parts", [])
-    roteiro = "\n".join(
-        parte["text"] for parte in partes if "text" in parte
-    )
-
-    if not roteiro.strip():
-        raise RuntimeError("A resposta do Gemini veio vazia.")
-
-    return roteiro
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return None
 
 
-# ==========================================
-# MENU PRINCIPAL
-# ==========================================
+def carregar_filmes(endpoint, params=None):
+    data = tmdb_get(endpoint, params)
+    if not data:
+        return []
+    return data.get("results", [])
 
+
+def imagem_filme(filme):
+    poster = filme.get("poster_path")
+    if poster:
+        return IMAGE_URL + poster
+    return None
+
+
+# =========================
+# CABEÇALHO
+# =========================
+st.markdown(
+    "<h1 style='color:#e50914;font-size:42px;'>RFLIX</h1>",
+    unsafe_allow_html=True
+)
+st.caption("SEU CINEMA • DESCUBRA • EXPLORE • ASSISTA")
+
+st.markdown("---")
+
+# =========================
+# MENU LATERAL
+# =========================
 with st.sidebar:
-    st.title("🎥 RFlix Studio")
-    st.write("Menu principal")
+    st.title("⚙️ Configurações")
+    st.write("Catálogo de filmes pela TMDB.")
 
-    aba = st.radio(
-        "Escolha uma função:",
-        [
-            "🎙️ Gerar Voz",
-            "🎬 Gerar Vídeo",
-            "🤖 Roteirista IA",
-            "📂 Meus Arquivos",
-            "ℹ️ Sobre"
-        ]
+    if TMDB_TOKEN:
+        st.success("Token TMDB configurado.")
+    else:
+        st.warning(
+            "Configure TMDB_BEARER_TOKEN nos Secrets "
+            "para carregar o catálogo."
+        )
+
+    st.markdown("---")
+    st.subheader("🎞️ Adicionar vídeo autorizado")
+
+    titulo_video = st.text_input("Título do vídeo")
+    url_video = st.text_input(
+        "URL direta do vídeo",
+        placeholder="https://exemplo.com/filme.mp4"
     )
 
-# ==========================================
-# ABA 1 — GERAR VOZ
-# ==========================================
-
-if aba == "🎙️ Gerar Voz":
-
-    st.header("🎙️ Gerador de Voz")
-    st.write("Transforme seus textos em narração.")
-
-    texto = st.text_area(
-        "Digite o texto para narrar:",
-        height=220,
-        placeholder="Cole aqui o texto da sua novela..."
+    direitos_confirmados = st.checkbox(
+        "Tenho autorização para disponibilizar este vídeo."
     )
 
-    voz_nome = st.selectbox(
-        "Escolha uma voz:",
-        list(VOZES.keys())
-    )
+    if st.button("Adicionar à RFlix", use_container_width=True):
+        url_limpa = url_video.strip()
 
-    if st.button("🔊 GERAR ÁUDIO", type="primary"):
-
-        if not texto.strip():
-            st.warning("Digite um texto antes de gerar o áudio.")
-
+        if not titulo_video.strip():
+            st.error("Informe o título.")
+        elif not url_limpa.startswith("https://"):
+            st.error("Informe uma URL HTTPS válida.")
+        elif not direitos_confirmados:
+            st.error("Confirme que possui autorização.")
         else:
-            try:
-                with st.spinner("Gerando a narração..."):
-                    asyncio.run(
-                        criar_audio(
-                            texto,
-                            VOZES[voz_nome],
-                            ARQUIVO_AUDIO
-                        )
-                    )
-
-                st.success("Áudio gerado!")
-                salvar_historico(
-                    HISTORICO,
-                    f"Data: {datetime.now():%d/%m/%Y %H:%M}\n"
-                    f"Voz: {voz_nome}\nTexto:\n{texto}"
-                )
-
-            except Exception as erro:
-                st.error(f"Erro ao gerar áudio: {erro}")
-
-    if ARQUIVO_AUDIO.exists():
-        st.subheader("Seu áudio")
-        st.audio(str(ARQUIVO_AUDIO), format="audio/mp3")
-
-        st.download_button(
-            "⬇️ Baixar áudio MP3",
-            data=ARQUIVO_AUDIO.read_bytes(),
-            file_name="rflix_narracao.mp3",
-            mime="audio/mpeg"
-        )
-
-# ==========================================
-# ABA 2 — GERAR VÍDEO
-# ==========================================
-
-elif aba == "🎬 Gerar Vídeo":
-
-    st.header("🎬 Criador de Prompts para Vídeos")
-    st.write(
-        "Prepare a descrição da cena para usar em uma ferramenta "
-        "de geração de vídeo."
-    )
-
-    ideia_video = st.text_area(
-        "Descreva o vídeo que deseja criar:",
-        height=180,
-        placeholder=(
-            "Ex.: Uma jovem chega a uma mansão durante "
-            "uma noite de tempestade..."
-        )
-    )
-
-    estilo = st.selectbox(
-        "Estilo visual:",
-        [
-            "Realista cinematográfico",
-            "Cartoon colorido",
-            "Animação 3D",
-            "Novela dramática",
-            "Terror e mistério"
-        ]
-    )
-
-    duracao_video = st.selectbox(
-        "Duração desejada:",
-        ["5 segundos", "10 segundos", "15 segundos", "30 segundos"]
-    )
-
-    if st.button("✨ PREPARAR PROMPT", type="primary"):
-
-        if not ideia_video.strip():
-            st.warning("Descreva a cena primeiro.")
-
-        else:
-            prompt_video = f"""
-Crie um vídeo no estilo: {estilo}.
-Duração desejada: {duracao_video}.
-Descrição da cena: {ideia_video}
-
-Inclua movimentos de câmera, iluminação, ambiente,
-expressões dos personagens e continuidade visual.
-Não inclua legendas, textos ou marcas-d'água,
-a menos que sejam solicitados.
-"""
-
-            st.session_state["prompt_video"] = prompt_video
-
-            salvar_historico(
-                HISTORICO_VIDEOS,
-                f"Data: {datetime.now():%d/%m/%Y %H:%M}\n"
-                f"{prompt_video}"
-            )
-
-    if st.session_state.get("prompt_video"):
-        st.subheader("Prompt preparado")
-        st.text_area(
-            "Copie e utilize na ferramenta de vídeo:",
-            value=st.session_state["prompt_video"],
-            height=220,
-            key="prompt_video_exibicao"
-        )
-
-        st.download_button(
-            "⬇️ Baixar prompt TXT",
-            data=st.session_state["prompt_video"],
-            file_name="prompt_rflix.txt",
-            mime="text/plain"
-        )
-
-    st.divider()
-    st.subheader("Ferramentas externas")
-
-    st.markdown(
-        "- [Hugging Face Spaces](https://huggingface.co/spaces) — "
-        "experimente demonstrações de IA.\n"
-        "- [Wan](https://wan.video/) — consulte a disponibilidade "
-        "e as condições atuais.\n"
-        "- [Google AI Studio](https://aistudio.google.com/) — "
-        "experimente ferramentas de IA."
-    )
+            st.session_state.my_videos.append({
+                "title": titulo_video.strip(),
+                "url": url_limpa
+            })
+            st.success("Vídeo adicionado nesta sessão.")
 
     st.caption(
-        "Esses serviços são externos. A disponibilidade gratuita, "
-        "os limites e a geração de vídeos dependem de cada plataforma."
+        "Use somente vídeos próprios, de domínio público "
+        "ou licenciados. A URL precisa apontar para um "
+        "arquivo de vídeo compatível com o player."
     )
 
-# ==========================================
-# ABA 3 — ROTEIRISTA IA COM GEMINI
-# ==========================================
+# =========================
+# DESTAQUE PRINCIPAL
+# =========================
+st.markdown("""
+<div style="
+background:linear-gradient(110deg,#252b3b,#11141c);
+padding:30px;border-radius:12px;">
+<p style="color:#ff5964;font-weight:bold;">BEM-VINDO À RFLIX</p>
+<h1>Grandes histórias esperam por você.</h1>
+<p>Explore o catálogo e descubra seu próximo filme.</p>
+</div>
+""", unsafe_allow_html=True)
 
-elif aba == "🤖 Roteirista IA":
+st.write("")
 
-    st.header("🤖 Roteirista IA — RFlix Studio")
-    st.write(
-        "Crie roteiros de novelas, episódios, cenas e diálogos."
+# =========================
+# PESQUISA
+# =========================
+pesquisa = st.text_input(
+    "🔎 Buscar filmes",
+    placeholder="Digite o nome de um filme..."
+)
+
+if pesquisa.strip():
+    resultados = carregar_filmes(
+        "/search/movie",
+        {
+            "query": pesquisa.strip(),
+            "language": "pt-BR",
+            "include_adult": False,
+            "page": 1
+        }
     )
+    titulo_secao = "Resultados da pesquisa"
+else:
+    resultados = []
+    titulo_secao = ""
 
-    genero = st.selectbox(
-        "Gênero da história:",
-        [
-            "Romance",
-            "Drama",
-            "Terror e mistério",
-            "Comédia",
-            "Aventura",
-            "Ficção científica"
-        ]
-    )
+# =========================
+# FILEIRAS DE FILMES
+# =========================
+def mostrar_fileira(titulo, filmes, chave):
+    st.subheader(titulo)
 
-    duracao = st.selectbox(
-        "Duração aproximada do episódio:",
-        ["1 minuto", "3 minutos", "5 minutos", "10 minutos"]
-    )
+    if not filmes:
+        st.info("Nenhum filme disponível nesta seção.")
+        return
 
-    ideia = st.text_area(
-        "Qual é a história?",
-        height=140,
-        placeholder=(
-            "Ex.: Uma jovem descobre que sua família "
-            "esconde um segredo há muitos anos..."
+    colunas = st.columns(5)
+
+    for indice, filme in enumerate(filmes[:20]):
+        with colunas[indice % 5]:
+            poster = imagem_filme(filme)
+
+            if poster:
+                st.image(poster, use_container_width=True)
+            else:
+                st.markdown("🎬 *Cartaz indisponível*")
+
+            nome = (
+                filme.get("title")
+                or filme.get("name")
+                or "Filme sem título"
+            )
+            st.markdown(
+                f"<div class='movie-title'>{nome}</div>",
+                unsafe_allow_html=True
+            )
+
+            nota = filme.get("vote_average", 0)
+            ano = (filme.get("release_date") or "")[:4]
+            st.caption(f"★ {nota:.1f}/10 · {ano or 'Ano indisponível'}")
+
+            if st.button(
+                "Ver detalhes",
+                key=f"{chave}_{filme.get('id', indice)}",
+                use_container_width=True
+            ):
+                st.session_state.selected_movie = filme
+
+
+if pesquisa.strip():
+    mostrar_fileira(titulo_secao, resultados, "busca")
+else:
+    if TMDB_TOKEN:
+        em_alta = carregar_filmes(
+            "/trending/movie/week",
+            {"language": "pt-BR"}
         )
-    )
+        populares = carregar_filmes(
+            "/movie/popular",
+            {"language": "pt-BR", "page": 1}
+        )
+        avaliados = carregar_filmes(
+            "/movie/top_rated",
+            {"language": "pt-BR", "page": 1}
+        )
 
-    personagens = st.text_area(
-        "Personagens principais (opcional):",
-        placeholder="Ex.: Ana, Miguel, Clara..."
-    )
+        mostrar_fileira("🔥 Em alta", em_alta, "alta")
+        st.markdown("---")
+        mostrar_fileira("🎬 Filmes populares", populares, "pop")
+        st.markdown("---")
+        mostrar_fileira("⭐ Mais bem avaliados", avaliados, "nota")
+    else:
+        st.info(
+            "Configure a chave da TMDB para visualizar "
+            "cartazes, sinopses e catálogo."
+        )
 
-    if st.button("✨ CRIAR ROTEIRO", type="primary"):
+# =========================
+# DETALHES DO FILME
+# =========================
+filme = st.session_state.selected_movie
 
-        if not ideia.strip():
-            st.warning("Digite a ideia da sua história.")
+if filme:
+    st.markdown("---")
+    st.header(filme.get("title", "Detalhes do filme"))
 
-        else:
-            try:
-                with st.spinner(
-                    "O Gemini está escrevendo seu episódio..."
-                ):
-                    roteiro = gerar_roteiro_gemini(
-                        ideia,
-                        genero,
-                        duracao,
-                        personagens
+    poster, detalhes = st.columns([1, 2])
+
+    with poster:
+        if imagem_filme(filme):
+            st.image(imagem_filme(filme), use_container_width=True)
+
+    with detalhes:
+        st.write(filme.get("overview") or "Sinopse indisponível.")
+        st.write(
+            f"Data de lançamento: "
+            f"{filme.get('release_date') or 'Não informada'}"
+        )
+        st.write(
+            f"Avaliação: {filme.get('vote_average', 0):.1f}/10"
+        )
+
+        if TMDB_TOKEN and filme.get("id"):
+            videos = tmdb_get(
+                f"/movie/{filme['id']}/videos",
+                {"language": "pt-BR"}
+            )
+
+            if videos:
+                trailers = [
+                    v for v in videos.get("results", [])
+                    if v.get("site") == "YouTube"
+                    and v.get("type") in ("Trailer", "Teaser")
+                ]
+
+                if trailers:
+                    trailer = trailers[0]
+                    st.link_button(
+                        "▶️ Assistir ao trailer",
+                        "https://www.youtube.com/watch?v="
+                        + trailer["key"]
                     )
 
-                st.session_state["ultimo_roteiro"] = roteiro
+    st.caption(
+        "O catálogo não fornece o filme completo. "
+        "A reprodução depende de uma fonte autorizada."
+    )
 
-                salvar_historico(
-                    HISTORICO,
-                    f"ROTEIRO — {datetime.now():%d/%m/%Y %H:%M}\n"
-                    f"Gênero: {genero}\n"
-                    f"Ideia: {ideia}\n\n"
-                    f"{roteiro}"
-                )
+# =========================
+# FILMES AUTORIZADOS
+# =========================
+st.markdown("---")
+st.header("🍿 Filmes disponíveis para assistir")
 
-                st.success("Roteiro criado com sucesso!")
+if st.session_state.my_videos:
+    for indice, video in enumerate(st.session_state.my_videos):
+        with st.expander("🎬 " + video["title"]):
+            st.video(video["url"])
+else:
+    st.info(
+        "Ainda não há vídeos adicionados. "
+        "Use o menu lateral para cadastrar um vídeo autorizado."
+    )
 
-            except Exception as erro:
-                st.error(str(erro))
-
-    roteiro_atual = st.session_state.get("ultimo_roteiro", "")
-
-    if roteiro_atual:
-        st.divider()
-        st.subheader("📜 Seu roteiro")
-
-        st.markdown(roteiro_atual)
-
-        st.download_button(
-            "⬇️ BAIXAR ROTEIRO TXT",
-            data=roteiro_atual,
-            file_name="roteiro_rflix.txt",
-            mime="text/plain"
-        )
-
-# ==========================================
-# ABA 4 — MEUS ARQUIVOS
-# ==========================================
-
-elif aba == "📂 Meus Arquivos":
-
-    st.header("📂 Meus Arquivos")
-
-    st.subheader("Histórico de textos e roteiros")
-    texto_historico = ler_arquivo(HISTORICO)
-
-    if texto_historico:
-        st.text_area(
-            "Histórico:",
-            value=texto_historico,
-            height=250
-        )
-
-        st.download_button(
-            "⬇️ Baixar histórico",
-            data=texto_historico,
-            file_name="historico_rflix.txt",
-            mime="text/plain"
-        )
-    else:
-        st.info("Ainda não há textos ou roteiros salvos.")
-
-    st.divider()
-
-    st.subheader("Histórico de prompts de vídeo")
-    historico_videos = ler_arquivo(HISTORICO_VIDEOS)
-
-    if historico_videos:
-        st.text_area(
-            "Prompts de vídeo:",
-            value=historico_videos,
-            height=200
-        )
-
-        st.download_button(
-            "⬇️ Baixar histórico de vídeos",
-            data=historico_videos,
-            file_name="historico_videos.txt",
-            mime="text/plain"
-        )
-    else:
-        st.info("Ainda não há prompts de vídeo salvos.")
-
-    st.divider()
-
-    if ARQUIVO_AUDIO.exists():
-        st.subheader("Último áudio gerado")
-
-        st.download_button(
-            "⬇️ Baixar último áudio MP3",
-            data=ARQUIVO_AUDIO.read_bytes(),
-            file_name="ultimo_audio.mp3",
-            mime="audio/mpeg"
-        )
-
-    st.divider()
-
-    st.warning("A limpeza abaixo apaga os históricos de texto e vídeo.")
-
-    if st.button("🗑️ LIMPAR HISTÓRICOS"):
-        for arquivo in [HISTORICO, HISTORICO_VIDEOS]:
-            if arquivo.exists():
-                arquivo.unlink()
-
-        st.success("Históricos apagados.")
-        st.rerun()
-
-# ==========================================
-# ABA 5 — SOBRE
-# ==========================================
-
-elif aba == "ℹ️ Sobre":
-
-    st.header("ℹ️ Sobre o RFlix Studio")
-
-    st.markdown("""
-    O **RFlix Studio** reúne ferramentas para ajudar na criação
-    de histórias e conteúdos audiovisuais.
-
-    **Recursos disponíveis nesta versão:**
-
-    - 🎙️ Geração de narração com vozes do Edge TTS.
-    - 🤖 Criação de roteiros com a API Gemini.
-    - 🎬 Preparação de prompts para geração de vídeos.
-    - 📂 Histórico de textos, roteiros e prompts.
-    - ⬇️ Downloads de arquivos de texto e áudio.
-
-    **Importante:** a geração de roteiros depende do acesso à API
-    Gemini e dos limites da sua conta. A disponibilidade das vozes
-    e dos serviços externos também pode mudar.
-
-    O RFlix Studio não garante uso ilimitado ou gratuito de
-    serviços de terceiros.
-    """)
-
-    st.caption("RFlix Studio — ferramentas para sua criatividade.")
+# =========================
+# RODAPÉ
+# =========================
+st.markdown("---")
+st.caption(
+    "RFlix — Projeto independente. "
+    "Este produto utiliza a API da TMDB, mas não é "
+    "endossado nem certificado pela TMDB."
+)
+st.caption(
+    "TMDB: https://www.themoviedb.org/ | "
+    "Documentação: https://developer.themoviedb.org/"
+    )
+    
