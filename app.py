@@ -96,6 +96,33 @@ st.write("---")
 pesquisa = st.text_input("🔎 Pesquisar...")
 
 # =========================
+# EXIBIR DETALHES — FUNÇÃO CORRIGIDA
+# =========================
+def exibir_detalhes():
+    if st.session_state.selected_movie is None:
+        return
+    
+    item = st.session_state.selected_movie
+    st.write("---")
+    col_p, col_i = st.columns([1, 2])
+    
+    with col_p:
+        st.image(imagem(item), width=250)
+        st.markdown("<div style='margin:12px 0;display:flex;gap:8px;'>" + botao_youtube(item) + botao_vix(item) + "</div>", unsafe_allow_html=True)
+    
+    with col_i:
+        st.subheader(f"🎬 {nome(item)}")
+        st.write(item.get("overview") or "Sem sinopse disponível.")
+        data_info = item.get("release_date") or item.get("first_air_date", "---")
+        st.write(f"📅 Data de lançamento: {data_info}")
+        st.write(f"⭐ Nota: {item.get('vote_average', 0):.1f}/10")
+        
+        if st.button("✖ Fechar detalhes"):
+            st.session_state.selected_movie = None
+            st.rerun()
+    st.write("---")
+
+# =========================
 # EXIBIR FILEIRA
 # =========================
 def mostrar_fileira(titulo, lista, chave):
@@ -122,22 +149,9 @@ def mostrar_fileira(titulo, lista, chave):
                         st.session_state.favoritos.append(item_id)
                     st.rerun()
             with c2:
-                if st.button("▶", key=f"det_{chave}_{item_id}"):
+                if st.button("▶ Ver", key=f"det_{chave}_{item_id}"):
                     st.session_state.selected_movie = item
                     st.rerun()
-    st.write("---")
-    if st.session_state.selected_movie and st.session_state.selected_movie.get("id") in [x.get("id") for x in lista]:
-        item = st.session_state.selected_movie
-        col_p, col_i = st.columns([1, 2])
-        with col_p:
-            st.image(imagem(item), width=250)
-            st.markdown("<div style='margin:12px 0;display:flex;gap:8px;'>" + botao_youtube(item) + botao_vix(item) + "</div>", unsafe_allow_html=True)
-        with col_i:
-            st.subheader(nome(item))
-            st.write(item.get("overview") or "Sem sinopse disponível.")
-            st.write(f"📅 Data: {item.get('release_date') or item.get('first_air_date', '---')}")
-            st.write(f"⭐ Nota: {item.get('vote_average', 0):.1f}/10")
-        st.write("---")
 
 # =========================
 # CONTEÚDO DAS ABAS
@@ -147,7 +161,7 @@ aba = st.session_state.aba_atual
 if aba == "filmes":
     if pesquisa.strip():
         res = carregar("/search/movie", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"Resultados para: {pesquisa}", res, "busca_f")
+        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_f")
     else:
         mostrar_fileira("🔥 Em Alta", carregar("/trending/movie/week", {"language": "pt-BR"}), "alta_f")
         mostrar_fileira("🎞️ Populares", carregar("/movie/popular", {"language": "pt-BR"}), "pop_f")
@@ -156,7 +170,7 @@ if aba == "filmes":
 elif aba == "series":
     if pesquisa.strip():
         res = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"Resultados para: {pesquisa}", res, "busca_s")
+        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_s")
     else:
         mostrar_fileira("🔥 Em Alta", carregar("/trending/tv/week", {"language": "pt-BR"}), "alta_s")
         mostrar_fileira("📺 Populares", carregar("/tv/popular", {"language": "pt-BR"}), "pop_s")
@@ -164,7 +178,7 @@ elif aba == "series":
 elif aba == "novelas":
     if pesquisa.strip():
         res = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"Resultados para: {pesquisa}", res, "busca_n")
+        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_n")
     else:
         res = carregar("/discover/tv", {"with_genres": "10766", "with_original_language": "pt", "language": "pt-BR"})
         mostrar_fileira("📖 Novelas Brasileiras", res, "nov_br")
@@ -180,7 +194,7 @@ elif aba == "animes":
             if rid not in vistos:
                 vistos.add(rid)
                 unicos.append(r)
-        mostrar_fileira(f"Resultados para: {pesquisa}", unicos, "busca_a")
+        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", unicos, "busca_a")
     else:
         res = carregar("/discover/tv", {"with_genres": "16", "with_original_language": "ja", "language": "pt-BR"})
         mostrar_fileira("🎌 Animes Populares", res, "anime_pop")
@@ -196,12 +210,15 @@ elif aba == "desenhos":
             if rid not in vistos:
                 vistos.add(rid)
                 unicos.append(r)
-        mostrar_fileira(f"Resultados para: {pesquisa}", unicos, "busca_d")
+        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", unicos, "busca_d")
     else:
         res = carregar("/discover/movie", {"with_genres": "16", "language": "pt-BR"})
         mostrar_fileira("🎬 Filmes de Animação", res, "desenho_f")
         res_tv = carregar("/discover/tv", {"with_genres": "16", "language": "pt-BR"})
         mostrar_fileira("📺 Séries de Desenhos", res_tv, "desenho_s")
+
+# ✅ AQUI: Chamada para exibir os detalhes (fora da função, sempre no final)
+exibir_detalhes()
 
 st.write("---")
 st.caption("RFlix • Dados da TMDB • ViX e YouTube são marcas independentes • Prefira conteúdo legal e autorizado!")
