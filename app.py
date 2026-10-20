@@ -87,9 +87,6 @@ if "favoritos" not in st.session_state:
 if "tema_escuro" not in st.session_state:
     st.session_state.tema_escuro = True
 
-if "genero_escolhido" not in st.session_state:
-    st.session_state.genero_escolhido = None
-
 # =========================
 # ESTILOS
 # =========================
@@ -99,15 +96,11 @@ def aplicar_tema():
         bg_sidebar = "#151923"
         texto = "white"
         destaque = "#e50914"
-        bg_aba_inativa = "#1a1a2e"
-        bg_aba_ativa = "#e50914"
     else:
         bg_main = "#ffffff"
         bg_sidebar = "#f0f2f6"
         texto = "#090b10"
         destaque = "#e50914"
-        bg_aba_inativa = "#e0e0e0"
-        bg_aba_ativa = "#e50914"
 
     st.markdown(f"""
     <style>
@@ -126,10 +119,6 @@ def aplicar_tema():
     .btn-vix:hover {{background:#b20610;}}
     .btn-tmdb {{display:inline-block;padding:10px 20px;background:#01b4e4;color:white;border-radius:6px;text-decoration:none;font-weight:bold;}}
     .botoes-acao {{display:flex;gap:12px;flex-wrap:wrap;margin:15px 0;}}
-    .aba-btn {{padding:10px 16px;border-radius:6px;border:none;font-weight:bold;cursor:pointer;}}
-    .aba-ativa {{background:{bg_aba_ativa};color:white;}}
-    .aba-inativa {{background:{bg_aba_inativa};color:{texto};}}
-    .secao-titulo {{font-size:22px;font-weight:bold;margin:25px 0 15px 0;padding-bottom:8px;border-bottom:2px solid {destaque};}}
     </style>
     """, unsafe_allow_html=True)
 
@@ -188,19 +177,9 @@ def alternar_favorito(item):
         return True
 
 
-def botao_compartilhar(item, tipo="movie"):
-    item_id = item.get("id")
-    if tipo == "movie":
-        link = f"https://www.themoviedb.org/movie/{item_id}"
-    else:
-        link = f"https://www.themoviedb.org/tv/{item_id}"
-    return f'<a href="{link}" target="_blank" style="display:inline-block;padding:6px 12px;background:#1e88d9;color:white;border-radius:6px;text-decoration:none;font-size:14px;margin:8px 0;">🔗 Ver no TMDB</a>'
-
-
 def botao_youtube(item):
     titulo = nome_item(item)
-    tipo = "filme" if item.get("title") else "série"
-    busca = f"{titulo} {tipo} completo dublado"
+    busca = f"{titulo} completo dublado"
     link_busca = YOUTUBE_SEARCH_URL + urllib.parse.quote(busca)
     return f'<a href="{link_busca}" target="_blank" class="btn-youtube">▶️ Assistir no YouTube</a>'
 
@@ -266,12 +245,10 @@ def exibir_detalhes_item(item, tipo="movie"):
         st.write(f"📅 **Data de lançamento:** {data_info[:4] if data_info else 'Não informada'}")
         
         nota = item.get("vote_average", 0)
-        votos = item.get("vote_count", 0)
-        st.write(f"⭐ **Avaliação:** {nota:.1f}/10 — baseado em {votos} votos")
+        st.write(f"⭐ **Avaliação:** {nota:.1f}/10")
         
         if tipo == "tv":
             st.write(f"📺 **Temporadas:** {item.get('number_of_seasons', 'N/A')}")
-            st.write(f"🎬 **Episódios:** {item.get('number_of_episodes', 'N/A')}")
     
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("")
@@ -281,7 +258,7 @@ def exibir_detalhes_item(item, tipo="movie"):
 # 📂 MOSTRAR FILEIRA
 # =========================
 def mostrar_fileira(titulo, items, chave, tipo="movie", limite=20):
-    st.markdown(f'<div class="secao-titulo">{titulo}</div>', unsafe_allow_html=True)
+    st.subheader(titulo)
     
     if not items:
         st.info("Nenhum resultado encontrado.")
@@ -327,7 +304,7 @@ def mostrar_fileira(titulo, items, chave, tipo="movie", limite=20):
 col_logo, col_tema = st.columns([4, 1])
 with col_logo:
     st.markdown("<h1 class='destaque' style='font-size:42px;margin:0;'>RFLIX</h1>", unsafe_allow_html=True)
-    st.caption("🎬 FILMES • 📺 SÉRIES • 📖 NOVELAS • � ANIMES • 🎨 DESENHOS")
+    st.caption("🎬 FILMES • 📺 SÉRIES • 📖 NOVELAS • 🎌 ANIMES • 🎨 DESENHOS")
 with col_tema:
     if st.button("🌙" if st.session_state.tema_escuro else "☀️", help="Alternar tema"):
         st.session_state.tema_escuro = not st.session_state.tema_escuro
@@ -376,7 +353,6 @@ pesquisa = st.text_input("🔎 Pesquisar...", placeholder="Digite o nome e apert
 # =========================
 # 🎯 CONTEÚDO DE CADA ABA
 # =========================
-
 aba = st.session_state.aba_atual
 
 # -------------------------
@@ -454,28 +430,22 @@ elif aba == "series":
 # -------------------------
 elif aba == "novelas":
     st.subheader("📖 Novelas")
-    st.info("💡 Novelas brasileiras e séries de drama")
     
     if pesquisa.strip():
         resultados = carregar_filmes("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR", "page": 1})
         mostrar_fileira(f"🔎 Resultados para: '{pesquisa}'", resultados, "busca_novelas", "tv")
     else:
-        # Gênero Novela = 10766 + idioma português
         novelas = carregar_filmes("/discover/tv", {"with_genres": "10766", "with_original_language": "pt", "language": "pt-BR", "sort_by": "popularity.desc", "page": 1})
         mostrar_fileira("📖 Novelas Brasileiras", novelas, "novelas_br", "tv")
         
         drama = carregar_filmes("/discover/tv", {"with_genres": "18", "with_original_language": "pt", "language": "pt-BR", "sort_by": "popularity.desc", "page": 1})
         mostrar_fileira("💃 Séries de Drama", drama, "novelas_drama", "tv")
-        
-        populares = carregar_filmes("/search/tv", {"query": "novela brasileira", "language": "pt-BR", "page": 1})
-        mostrar_fileira("🇧🇷 Mais Buscadas", populares, "novelas_pop", "tv")
 
 # -------------------------
 # 🎌 ANIMES
 # -------------------------
 elif aba == "animes":
     st.subheader("🎌 Animes")
-    st.info("💡 Animes japoneses — busca em português e inglês")
     
     if pesquisa.strip():
         resultados_pt = carregar_filmes("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR", "page": 1})
@@ -484,8 +454,9 @@ elif aba == "animes":
         vistos = set()
         unicos = []
         for item in todos:
-            if item.get("id") not in vistos:
-                vistos.add(item.get("id"))
+            item_id = item.get("id")
+            if item_id not in vistos:
+                vistos.add(item_id)
                 unicos.append(item)
         mostrar_fileira(f"🔎 Resultados para: '{pesquisa}'", unicos, "busca_animes", "tv")
     else:
@@ -494,16 +465,12 @@ elif aba == "animes":
         
         animes_top = carregar_filmes("/discover/tv", {"with_genres": "16", "with_original_language": "ja", "language": "pt-BR", "sort_by": "vote_average.desc", "page": 1})
         mostrar_fileira("⭐ Melhores Avaliados", animes_top, "animes_top", "tv")
-        
-        animes_novos = carregar_filmes("/discover/tv", {"with_genres": "16", "with_original_language": "ja", "language": "pt-BR", "sort_by": "first_air_date.desc", "page": 1})
-        mostrar_fileira("🆕 Lançamentos Recentes", animes_novos, "animes_novos", "tv")
 
 # -------------------------
 # 🎨 DESENHOS
 # -------------------------
 elif aba == "desenhos":
     st.subheader("🎨 Desenhos")
-    st.info("💡 Animação infantil e familiar — filmes e séries")
     
     if pesquisa.strip():
         res_filmes = carregar_filmes("/search/movie", {"query": pesquisa.strip(), "language": "pt-BR", "page": 1})
@@ -512,4 +479,46 @@ elif aba == "desenhos":
         vistos = set()
         unicos = []
         for item in todos:
-            if item.get("id") not
+            item_id = item.get("id")
+            if item_id not in vistos:
+                vistos.add(item_id)
+                unicos.append(item)
+        mostrar_fileira(f"🔎 Resultados para: '{pesquisa}'", unicos, "busca_desenhos", "movie")
+    else:
+        desenhos_filmes = carregar_filmes("/discover/movie", {"with_genres": "16,10751", "language": "pt-BR", "sort_by": "popularity.desc", "page": 1})
+        mostrar_fileira("🎬 Filmes de Animação", desenhos_filmes, "desenhos_filmes", "movie")
+        
+        desenhos_series = carregar_filmes("/discover/tv", {"with_genres": "16,10762", "language": "pt-BR", "sort_by": "popularity.desc", "page": 1})
+        mostrar_fileira("📺 Séries de Desenhos", desenhos_series, "desenhos_series", "tv")
+
+# =========================
+# ⭐ MEUS FAVORITOS — LATERAL
+# =========================
+with st.sidebar:
+    st.title("⚙️ Menu")
+    if not TMDB_BEARER_TOKEN:
+        st.warning("⚠️ Configure sua chave TMDB no Secrets")
+    else:
+        st.success("✅ TMDB conectada")
+    
+    st.markdown("---")
+    st.subheader("⭐ Meus Favoritos")
+    st.caption(f"{len(st.session_state.favoritos)} itens salvos")
+    
+    if st.session_state.favoritos:
+        if st.button("Limpar todos os favoritos", use_container_width=True):
+            st.session_state.favoritos = []
+            st.rerun()
+    
+    st.markdown("---")
+    st.subheader("🎞️ Meus Vídeos")
+    titulo_video = st.text_input("Título", key="vid_titulo")
+    url_video = st.text_input("URL do vídeo", placeholder="https://...", key="vid_url")
+    direitos = st.checkbox("Tenho autorização", key="vid_check")
+    if st.button("Adicionar à RFlix", use_container_width=True):
+        if titulo_video.strip() and url_video.strip().startswith("https://") and direitos:
+            st.session_state.my_videos.append({"title": titulo_video.strip(), "url": url_video.strip()})
+            st.success("✅ Adicionado!")
+            st.rerun()
+        else:
+            st.error("Preencha corretamente e confirme os direit
