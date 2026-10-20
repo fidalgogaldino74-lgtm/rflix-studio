@@ -525,7 +525,7 @@ with st.sidebar:
 # =========================
  # 🎬 CINEMA GRATUITO
  # =========================
- st.markdown("---")
+ st.write("---")
  st.header("🎬 Cinema Gratuito")
  FILMES_GRATUITOS = [
      {
