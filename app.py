@@ -521,4 +521,50 @@ with st.sidebar:
             st.success("✅ Adicionado!")
             st.rerun()
         else:
-            st.error("Preencha corretamente e confirme os direit
+            st.error("Preencha corretamente e confirme os direitos")
+# =========================
+ # 🎬 CINEMA GRATUITO
+ # =========================
+ st.markdown("---")
+ st.header("🎬 Cinema Gratuito")
+ FILMES_GRATUITOS = [
+     {
+         "titulo": "Big Buck Bunny",
+         "descricao": "Animação de comédia sobre um coelho tranquilo que enfrenta três pequenos provocadores.",
+         "url": "https://www.youtube.com/watch?v=YE7VzlLtp-4",
+         "credito": "Blender Foundation / bigbuckbunny.org"
+     },
+     {
+         "titulo": "Sintel",
+         "descricao": "Uma aventura de fantasia sobre uma jovem que parte em busca de um pequeno dragão.",
+         "url": "https://www.youtube.com/watch?v=eRsGyueVLvQ",
+         "credito": "Blender Foundation / durian.blender.org"
+     }
+ ]
+ colunas_gratis = st.columns(2)
+ for indice, item in enumerate(FILMES_GRATUITOS):
+     with colunas_gratis[indice]:
+         st.markdown(f"### 🍿 {item['titulo']}")
+         st.write(item["descricao"])
+         st.video(item["url"])
+         st.caption(f"🎬 {item['credito']}")
+ # =========================
+ # 🍿 MEUS VÍDEOS
+ # =========================
+ st.markdown("---")
+ st.header("🍿 Meus Vídeos Autorizados")
+ if st.session_state.my_videos:
+     for idx, video in enumerate(st.session_state.my_videos):
+         with st.expander(f"🎬 {video['title']}"):
+             st.video(video["url"])
+             if st.button("🗑️ Remover", key=f"del_vid_{idx}"):
+                 st.session_state.my_videos.pop(idx)
+                 st.rerun()
+ else:
+     st.info("Nenhum vídeo cadastrado ainda. Use o menu lateral para adicionar!")
+ # =========================
+ # RODAPÉ
+ # =========================
+ st.markdown("---")
+ st.caption("RFlix — Seu espaço de entretenimento! Dados da TMDB. ViX e YouTube são marcas independentes. Sempre prefira conteúdo autorizado e legal!")
+ st.caption("TMDB: themoviedb.org | ViX: vix.com | YouTube: youtube.com")
