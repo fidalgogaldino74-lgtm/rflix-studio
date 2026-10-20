@@ -1,6 +1,7 @@
 import os
 import requests
 import streamlit as st
+import urllib.parse
 
 # =========================
 # CONFIGURAÇÃO DA RFLIX
@@ -15,6 +16,8 @@ st.set_page_config(
 API_URL = "https://api.themoviedb.org/3"
 IMAGE_URL = "https://image.tmdb.org/t/p/w500/"
 YOUTUBE_URL = "https://www.youtube.com/watch?v="
+YOUTUBE_SEARCH_URL = "https://www.youtube.com/results?search_query="
+ARCHIVE_SEARCH_URL = "https://archive.org/search?query="
 
 # =========================
 # TOKENS
@@ -67,7 +70,7 @@ if "genero_escolhido" not in st.session_state:
     st.session_state.genero_escolhido = None
 
 # =========================
-# ESTILOS — TEMA CLARO E ESCURO
+# ESTILOS
 # =========================
 def aplicar_tema():
     if st.session_state.tema_escuro:
@@ -92,6 +95,12 @@ def aplicar_tema():
     [data-testid="stImage"] img {{border-radius:8px;}}
     .destaque {{color:{destaque}}}
     .detalhes-box {{background:rgba(30,30,40,0.7);padding:25px;border-radius:12px;margin:20px 0;border:1px solid #333;}}
+    .btn-youtube {{display:inline-block;padding:10px 20px;background:#ff0000;color:white;border-radius:6px;text-decoration:none;font-weight:bold;text-align:center;}}
+    .btn-youtube:hover {{background:#cc0000;}}
+    .btn-archive {{display:inline-block;padding:10px 20px;background:#333333;color:white;border-radius:6px;text-decoration:none;font-weight:bold;text-align:center;}}
+    .btn-archive:hover {{background:#111111;}}
+    .btn-tmdb {{display:inline-block;padding:10px 20px;background:#01b4e4;color:white;border-radius:6px;text-decoration:none;font-weight:bold;}}
+    .botoes-acao {{display:flex;gap:12px;flex-wrap:wrap;margin:15px 0;}}
     </style>
     """, unsafe_allow_html=True)
 
@@ -153,20 +162,41 @@ def alternar_favorito(filme):
 def botao_compartilhar(filme):
     filme_id = filme.get("id")
     link = f"https://www.themoviedb.org/movie/{filme_id}"
-    return f'<a href="{link}" target="_blank" style="display:inline-block;padding:6px 12px;background:#1e88d9;color:white;border-radius:6px;text-decoration:none;font-size:14px;margin:8px 0;">🔗 Compartilhar no TMDB</a>'
+    return f'<a href="{link}" target="_blank" style="display:inline-block;padding:6px 12px;background:#1e88d9;color:white;border-radius:6px;text-decoration:none;font-size:14px;margin:8px 0;">🔗 Ver no TMDB</a>'
+
+
+def botao_assistir_youtube(filme):
+    titulo = nome_filme(filme)
+    ano = (filme.get("release_date") or "")[:4]
+    busca = f"{titulo} filme completo dublado {ano}" if ano else f"{titulo} filme completo dublado"
+    link_busca = YOUTUBE_SEARCH_URL + urllib.parse.quote(busca)
+    return f'<a href="{link_busca}" target="_blank" class="btn-youtube">▶️ Assistir no YouTube</a>'
+
+
+def botao_archive(filme):
+    """Busca o filme no Internet Archive"""
+    titulo = nome_filme(filme)
+    ano = (filme.get("release_date") or "")[:4]
+    busca = f"{titulo} {ano} movie" if ano else f"{titulo} movie"
+    link_busca = ARCHIVE_SEARCH_URL + urllib.parse.quote(busca)
+    return f'<a href="{link_busca}" target="_blank" class="btn-archive">📦 Internet Archive — Filmes Grátis</a>'
+
+
+def botao_onde_assistir(filme):
+    filme_id = filme.get("id")
+    link = f"https://www.themoviedb.org/movie/{filme_id}/watch"
+    return f'<a href="{link}" target="_blank" class="btn-tmdb">📺 Plataformas Oficiais</a>'
 
 
 # =========================
-# 🎬 FUNÇÃO: EXIBIR DETALHES DO FILME
+# FUNÇÃO: EXIBIR DETALHES
 # =========================
 def exibir_detalhes_filme(filme):
-    """Exibe os detalhes completos de um filme em uma seção destacada"""
     if not filme:
         return
 
     st.markdown('<div class="detalhes-box">', unsafe_allow_html=True)
     
-    # Cabeçalho com título e botão fechar
     col_titulo, col_fechar = st.columns([5, 1])
     with col_titulo:
         st.header(f"🎬 {nome_filme(filme)}")
@@ -179,7 +209,6 @@ def exibir_detalhes_filme(filme):
     eh_fav = eh_favorito(filme_id)
     fav_text = "❤️ Salvo" if eh_fav else "🤍 Salvar"
     
-    # Layout: Capa + Informações lado a lado
     col_poster, col_info = st.columns([1, 2])
     
     with col_poster:
@@ -187,7 +216,14 @@ def exibir_detalhes_filme(filme):
         if st.button(fav_text, key="fav_detalhe"):
             alternar_favorito(filme)
             st.rerun()
-        st.markdown(botao_compartilhar(filme), unsafe_allow_html=True)
+        
+        st.markdown('<div class="botoes-acao">', unsafe_allow_html=True)
+        st.markdown(botao_assistir_youtube(filme), unsafe_allow_html=True)
+        st.markdown(botao_archive(filme), unsafe_allow_html=True)
+        st.markdown(botao_onde_assistir(filme), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.caption("📦 Internet Archive: filmes de domínio público gratuitos e legais.")
     
     with col_info:
         st.subheader("📋 Sobre este filme")
@@ -204,7 +240,6 @@ def exibir_detalhes_filme(filme):
     
     st.markdown("---")
     
-    # Trailer embaixo, ocupando largura total
     st.subheader("▶ Trailer Oficial")
     videos_data = tmdb_get(f"/movie/{filme_id}/videos", {"language": "pt-BR"})
     trailers = []
@@ -216,11 +251,9 @@ def exibir_detalhes_filme(filme):
         st.video(f"{YOUTUBE_URL}{trailer['key']}")
     else:
         st.info("🎬 Nenhum trailer disponível no momento.")
-        st.markdown(f"[🔎 Ver mais informações no TMDB](https://www.themoviedb.org/movie/{filme_id})")
     
     st.markdown("---")
     
-    # Vídeos autorizados cadastrados
     correspondencias = [
         v for v in st.session_state.my_videos
         if v["title"].strip().casefold() == nome_filme(filme).strip().casefold()
@@ -231,8 +264,8 @@ def exibir_detalhes_filme(filme):
             st.video(video["url"])
     else:
         st.info(
-            "ℹ️ A TMDB fornece informações, sinopse e trailers oficiais, "
-            "mas não disponibiliza o filme completo por questões de direitos autorais."
+            "ℹ️ O Internet Archive oferece filmes em domínio público de forma gratuita e legal. "
+            "Clique no botão acima para buscar este filme lá!"
         )
     
     st.markdown("</div>", unsafe_allow_html=True)
@@ -292,7 +325,7 @@ with st.sidebar:
             st.session_state.my_videos.append({"title": titulo_video.strip(), "url": url_limpa})
             st.success("Vídeo adicionado nesta sessão.")
             st.rerun()
-    st.caption("Cadastre somente vídeos próprios, de domínio público ou licenciados. A TMDB fornece informações e trailers, não os filmes completos.")
+    st.caption("Cadastre somente vídeos próprios ou licenciados.")
 
 # =========================
 # DESTAQUE PRINCIPAL
@@ -320,7 +353,6 @@ def mostrar_fileira(titulo, filmes, chave, mostrar_genero=False):
         st.info("Nenhum filme encontrado nesta seção.")
         return
     
-    # Se um filme desta fileira estiver selecionado, mostre os detalhes logo abaixo
     detalhes_abaixo = False
     
     colunas = st.columns(5)
@@ -346,15 +378,12 @@ def mostrar_fileira(titulo, filmes, chave, mostrar_genero=False):
                 if st.button("▶ Detalhes", key=f"det_{chave}_{fid}", use_container_width=True):
                     st.session_state.selected_movie = filme
                     st.rerun()
-            st.markdown(botao_compartilhar(filme), unsafe_allow_html=True)
             
-            # Verifica se este é o filme selecionado
             if st.session_state.selected_movie and st.session_state.selected_movie.get("id") == fid:
                 detalhes_abaixo = True
     
     st.markdown("---")
     
-    # ✅ Mostra os detalhes logo ABAIXO da fileira onde o filme foi clicado
     if detalhes_abaixo and st.session_state.selected_movie:
         exibir_detalhes_filme(st.session_state.selected_movie)
 
@@ -383,7 +412,7 @@ if st.session_state.get("aba_atual") == "favoritos":
     st.stop()
 
 # =========================
-# CARREGAR FILMES CONFORME SELEÇÃO
+# CARREGAR FILMES
 # =========================
 filtrado_por_genero = st.session_state.genero_escolhido
 
@@ -467,6 +496,5 @@ else:
 # RODAPÉ
 # =========================
 st.markdown("---")
-st.caption("RFlix — Projeto independente. Dados e imagens fornecidos pela TMDB, mas não endossado nem certificado pela TMDB. Os filmes completos não são hospedados aqui — apenas informações, cartazes e trailers oficiais. Assista sempre por plataformas autorizadas.")
-st.caption("TMDB: https://www.themoviedb.org/")
-    
+st.caption("RFlix — Projeto independente. Dados da TMDB. Internet Archive é uma organização sem fins lucrativos. Filmes de domínio público. Sempre prefira conteúdo autorizado e legal!")
+st.caption("TMDB: themoviedb.org | Internet Archive: archive.org | YouTube: youtube.com")
