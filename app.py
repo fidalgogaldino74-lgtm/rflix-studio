@@ -17,12 +17,12 @@ API_URL = "https://api.themoviedb.org/3"
 IMAGE_URL = "https://image.tmdb.org/t/p/w500/"
 YOUTUBE_URL = "https://www.youtube.com/watch?v="
 YOUTUBE_SEARCH_URL = "https://www.youtube.com/results?search_query="
-ARCHIVE_SEARCH_URL = "https://archive.org/search?query="
+SEEKEE_SEARCH_URL = "https://seekee.app/search?q="
 
 # =========================
 # TOKENS
 # =========================
-TMDB_BEARER_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmODcwODQ4NjM3OTAzOTlhMjlkNDYwYzM0ODAwOGJhNCIsIm5iZiI6MTc5MjM3OTM4Mi45MzUwMDAyLCJzdWIiOiI2YWQ1ODlmNjNlNWYwYjVkYTc3OTdmYzQiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.YO3TBVfUDz8Eu93ClyAVV3zG8cXJUpSbMTuGMEN-ASw"
+TMDB_BEARER_TOKEN = st.secrets.get("TMDB_BEARER_TOKEN", "")
 
 # =========================
 # GÊNEROS
@@ -97,8 +97,8 @@ def aplicar_tema():
     .detalhes-box {{background:rgba(30,30,40,0.7);padding:25px;border-radius:12px;margin:20px 0;border:1px solid #333;}}
     .btn-youtube {{display:inline-block;padding:10px 20px;background:#ff0000;color:white;border-radius:6px;text-decoration:none;font-weight:bold;text-align:center;}}
     .btn-youtube:hover {{background:#cc0000;}}
-    .btn-archive {{display:inline-block;padding:10px 20px;background:#333333;color:white;border-radius:6px;text-decoration:none;font-weight:bold;text-align:center;}}
-    .btn-archive:hover {{background:#111111;}}
+    .btn-seekee {{display:inline-block;padding:10px 20px;background:#4A90E2;color:white;border-radius:6px;text-decoration:none;font-weight:bold;text-align:center;}}
+    .btn-seekee:hover {{background:#357ABD;}}
     .btn-tmdb {{display:inline-block;padding:10px 20px;background:#01b4e4;color:white;border-radius:6px;text-decoration:none;font-weight:bold;}}
     .botoes-acao {{display:flex;gap:12px;flex-wrap:wrap;margin:15px 0;}}
     </style>
@@ -173,13 +173,13 @@ def botao_assistir_youtube(filme):
     return f'<a href="{link_busca}" target="_blank" class="btn-youtube">▶️ Assistir no YouTube</a>'
 
 
-def botao_archive(filme):
-    """Busca o filme no Internet Archive"""
+def botao_seekee(filme):
+    """Busca o filme no Seekee"""
     titulo = nome_filme(filme)
     ano = (filme.get("release_date") or "")[:4]
-    busca = f"{titulo} {ano} movie" if ano else f"{titulo} movie"
-    link_busca = ARCHIVE_SEARCH_URL + urllib.parse.quote(busca)
-    return f'<a href="{link_busca}" target="_blank" class="btn-archive">📦 Internet Archive — Filmes Grátis</a>'
+    busca = f"{titulo} {ano} filme completo dublado" if ano else f"{titulo} filme completo dublado"
+    link_busca = SEEKEE_SEARCH_URL + urllib.parse.quote(busca)
+    return f'<a href="{link_busca}" target="_blank" class="btn-seekee">🔍 Buscar no Seekee</a>'
 
 
 def botao_onde_assistir(filme):
@@ -219,11 +219,11 @@ def exibir_detalhes_filme(filme):
         
         st.markdown('<div class="botoes-acao">', unsafe_allow_html=True)
         st.markdown(botao_assistir_youtube(filme), unsafe_allow_html=True)
-        st.markdown(botao_archive(filme), unsafe_allow_html=True)
+        st.markdown(botao_seekee(filme), unsafe_allow_html=True)
         st.markdown(botao_onde_assistir(filme), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         
-        st.caption("📦 Internet Archive: filmes de domínio público gratuitos e legais.")
+        st.caption("🔍 Seekee: busca inteligente com IA. Abre em nova aba.")
     
     with col_info:
         st.subheader("📋 Sobre este filme")
@@ -264,8 +264,8 @@ def exibir_detalhes_filme(filme):
             st.video(video["url"])
     else:
         st.info(
-            "ℹ️ O Internet Archive oferece filmes em domínio público de forma gratuita e legal. "
-            "Clique no botão acima para buscar este filme lá!"
+            "ℹ️ Clique em 'Buscar no Seekee' para pesquisar este filme. "
+            "O Seekee abre em uma nova aba com os resultados da busca."
         )
     
     st.markdown("</div>", unsafe_allow_html=True)
@@ -290,7 +290,10 @@ st.markdown("---")
 # =========================
 with st.sidebar:
     st.title("⚙️ Menu")
-    st.success("✅ TMDB conectada.")
+    if not TMDB_BEARER_TOKEN:
+        st.warning("⚠️ Configure sua chave TMDB no Secrets")
+    else:
+        st.success("✅ TMDB conectada.")
     st.markdown("---")
     st.subheader("🎭 Filtrar por Gênero")
     genero_opcoes = ["Todos"] + list(GENEROS.values())
@@ -496,5 +499,5 @@ else:
 # RODAPÉ
 # =========================
 st.markdown("---")
-st.caption("RFlix — Projeto independente. Dados da TMDB. Internet Archive é uma organização sem fins lucrativos. Filmes de domínio público. Sempre prefira conteúdo autorizado e legal!")
-st.caption("TMDB: themoviedb.org | Internet Archive: archive.org | YouTube: youtube.com")
+st.caption("RFlix — Projeto independente. Dados da TMDB. Seekee é uma marca independente (seekee.app). Cada site é responsável por seu próprio conteúdo. Sempre prefira conteúdo autorizado e legal!")
+st.caption("TMDB: themoviedb.org | Seekee: seekee.app | YouTube: youtube.com")
