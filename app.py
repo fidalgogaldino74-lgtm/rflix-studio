@@ -19,11 +19,12 @@ VIX_URL = "https://vix.com/pt-br/search?q="
 
 TMDB_BEARER_TOKEN = st.secrets.get("TMDB_BEARER_TOKEN", "")
 
-# ✅ INSERINDO O ADSENSE AQUI
+# ✅ CÓDIGOS DO ADSENSE INSERIDOS AQUI
 st.markdown("""
 <!-- Google AdSense -->
 <meta name="google-adsense-account" content="ca-pub-4932343551733152">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4932343551733152" crossorigin="anonymous"></script>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4932343551733152"
+     crossorigin="anonymous"></script>
 """, unsafe_allow_html=True)
 
 # =========================
@@ -60,7 +61,6 @@ def imagem(item):
     p = item.get("poster_path")
     if p:
         return IMAGE_URL + p.lstrip('/')
-    # ✅ Placeholder mais confiável
     return "https://picsum.photos/300/450?text=Sem+Imagem"
 
 def nome(item):
@@ -235,4 +235,4 @@ exibir_detalhes()
 
 st.write("---")
 st.caption("RFlix • Dados da TMDB • ViX e YouTube são marcas independentes • Prefira conteúdo legal e autorizado!")
-                         
+    
