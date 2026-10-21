@@ -19,6 +19,13 @@ VIX_URL = "https://vix.com/pt-br/search?q="
 
 TMDB_BEARER_TOKEN = st.secrets.get("TMDB_BEARER_TOKEN", "")
 
+# ✅ INSERINDO O ADSENSE AQUI
+st.markdown("""
+<!-- Google AdSense -->
+<meta name="google-adsense-account" content="ca-pub-4932343551733152">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4932343551733152" crossorigin="anonymous"></script>
+""", unsafe_allow_html=True)
+
 # =========================
 # ESTADO
 # =========================
@@ -34,13 +41,15 @@ if "favoritos" not in st.session_state:
 # =========================
 def tmdb_get(endpoint, params=None):
     if not TMDB_BEARER_TOKEN:
+        st.warning("⚠️ Token do TMDB não configurado nos Secrets!")
         return None
     headers = {"Authorization": f"Bearer {TMDB_BEARER_TOKEN}", "accept": "application/json"}
     try:
         r = requests.get(f"{API_URL}{endpoint}", headers=headers, params=params or {}, timeout=20)
         r.raise_for_status()
         return r.json()
-    except:
+    except Exception as e:
+        st.error(f"❌ Erro na API: {e}")
         return None
 
 def carregar(endpoint, params=None):
@@ -49,7 +58,10 @@ def carregar(endpoint, params=None):
 
 def imagem(item):
     p = item.get("poster_path")
-    return IMAGE_URL + p.lstrip('/') if p else "https://via.placeholder.com/300x450/1c1c1c/ffffff?text=Sem+Imagem"
+    if p:
+        return IMAGE_URL + p.lstrip('/')
+    # ✅ Placeholder mais confiável
+    return "https://picsum.photos/300/450?text=Sem+Imagem"
 
 def nome(item):
     return item.get("title") or item.get("name") or "Sem título"
@@ -60,7 +72,7 @@ def botao_youtube(item):
 
 def botao_vix(item):
     link = VIX_URL + urllib.parse.quote(nome(item))
-    return f'<a href="{link}" target="_blank" style="padding:8px 16px;background:#E50914;color:white;border-radius:6px;text-decoration:none;font-weight:bold;margin:4px;">📺 ViX</a>'
+    return f'<a href="{link}" target="_blank" style="padding:8px 16px;background:#0099ff;color:white;border-radius:6px;text-decoration:none;font-weight:bold;margin:4px;">📺 ViX</a>'
 
 # =========================
 # ESTILO
@@ -70,6 +82,8 @@ st.markdown("""
 .stApp {background:#090b10;color:white;}
 section[data-testid="stSidebar"] {background:#151923;}
 .movie-title {font-size:15px;font-weight:bold;min-height:42px;}
+div[data-testid="stImage"] img {border-radius:8px;}
+.stButton > button {border-radius:8px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,7 +110,7 @@ st.write("---")
 pesquisa = st.text_input("🔎 Pesquisar...")
 
 # =========================
-# EXIBIR DETALHES — FUNÇÃO CORRIGIDA
+# EXIBIR DETALHES
 # =========================
 def exibir_detalhes():
     if st.session_state.selected_movie is None:
@@ -108,7 +122,7 @@ def exibir_detalhes():
     
     with col_p:
         st.image(imagem(item), width=250)
-        st.markdown("<div style='margin:12px 0;display:flex;gap:8px;'>" + botao_youtube(item) + botao_vix(item) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;'>" + botao_youtube(item) + botao_vix(item) + "</div>", unsafe_allow_html=True)
     
     with col_i:
         st.subheader(f"🎬 {nome(item)}")
@@ -128,7 +142,7 @@ def exibir_detalhes():
 def mostrar_fileira(titulo, lista, chave):
     st.subheader(titulo)
     if not lista:
-        st.info("Nenhum resultado encontrado.")
+        st.info("Nenhum resultado encontrado. Verifique seu Token do TMDB nos Secrets do Streamlit!")
         return
     cols = st.columns(5)
     for i, item in enumerate(lista[:20]):
@@ -217,9 +231,8 @@ elif aba == "desenhos":
         res_tv = carregar("/discover/tv", {"with_genres": "16", "language": "pt-BR"})
         mostrar_fileira("📺 Séries de Desenhos", res_tv, "desenho_s")
 
-# ✅ AQUI: Chamada para exibir os detalhes (fora da função, sempre no final)
 exibir_detalhes()
 
 st.write("---")
 st.caption("RFlix • Dados da TMDB • ViX e YouTube são marcas independentes • Prefira conteúdo legal e autorizado!")
-    
+                         
