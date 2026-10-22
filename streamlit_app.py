@@ -1,238 +1,322 @@
+
+import asyncio
+import io
+import os
+import re
+import zipfile
 import requests
 import streamlit as st
-import urllib.parse
+import edge_tts
 
-# =========================
-# CONFIGURAÇÃO
-# =========================
 st.set_page_config(
-    page_title="RFlix | Seu cinema",
+    page_title="RFlix Studio",
     page_icon="🎬",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-API_URL = "https://api.themoviedb.org/3"
-IMAGE_URL = "https://image.tmdb.org/t/p/w500/"
-YOUTUBE_SEARCH_URL = "https://www.youtube.com/results?search_query="
-VIX_URL = "https://vix.com/pt-br/search?q="
-
-TMDB_BEARER_TOKEN = st.secrets.get("TMDB_BEARER_TOKEN", "")
-
-# ✅ CÓDIGOS DO ADSENSE INSERIDOS AQUI
-st.markdown("""
-<!-- Google AdSense -->
-<meta name="google-adsense-account" content="ca-pub-4932343551733152">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4932343551733152"
-     crossorigin="anonymous"></script>
-""", unsafe_allow_html=True)
-
-# =========================
-# ESTADO
-# =========================
-if "aba_atual" not in st.session_state:
-    st.session_state.aba_atual = "filmes"
-if "selected_movie" not in st.session_state:
-    st.session_state.selected_movie = None
-if "favoritos" not in st.session_state:
-    st.session_state.favoritos = []
-
-# =========================
-# FUNÇÕES
-# =========================
-def tmdb_get(endpoint, params=None):
-    if not TMDB_BEARER_TOKEN:
-        st.warning("⚠️ Token do TMDB não configurado nos Secrets!")
-        return None
-    headers = {"Authorization": f"Bearer {TMDB_BEARER_TOKEN}", "accept": "application/json"}
-    try:
-        r = requests.get(f"{API_URL}{endpoint}", headers=headers, params=params or {}, timeout=20)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        st.error(f"❌ Erro na API: {e}")
-        return None
-
-def carregar(endpoint, params=None):
-    data = tmdb_get(endpoint, params)
-    return data.get("results", []) if data else []
-
-def imagem(item):
-    p = item.get("poster_path")
-    if p:
-        return IMAGE_URL + p.lstrip('/')
-    return "https://picsum.photos/300/450?text=Sem+Imagem"
-
-def nome(item):
-    return item.get("title") or item.get("name") or "Sem título"
-
-def botao_youtube(item):
-    link = YOUTUBE_SEARCH_URL + urllib.parse.quote(f"{nome(item)} completo dublado")
-    return f'<a href="{link}" target="_blank" style="padding:8px 16px;background:#ff0000;color:white;border-radius:6px;text-decoration:none;font-weight:bold;margin:4px;">▶️ YouTube</a>'
-
-def botao_vix(item):
-    link = VIX_URL + urllib.parse.quote(nome(item))
-    return f'<a href="{link}" target="_blank" style="padding:8px 16px;background:#0099ff;color:white;border-radius:6px;text-decoration:none;font-weight:bold;margin:4px;">📺 ViX</a>'
-
-# =========================
-# ESTILO
-# =========================
 st.markdown("""
 <style>
-.stApp {background:#090b10;color:white;}
-section[data-testid="stSidebar"] {background:#151923;}
-.movie-title {font-size:15px;font-weight:bold;min-height:42px;}
-div[data-testid="stImage"] img {border-radius:8px;}
-.stButton > button {border-radius:8px;}
+.stApp {
+    background: #080b12;
+    color: white;
+}
+section[data-testid="stSidebar"] {
+    background: #141a27;
+}
+h1, h2, h3 {
+    color: #e7b85c;
+}
+.stButton > button {
+    border-radius: 10px;
+    font-weight: bold;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# CABEÇALHO
-# =========================
-st.markdown("# 🎬 RFLIX")
-st.caption("🎬 Filmes • 📺 Séries • 📖 Novelas • 🎌 Animes • 🎨 Desenhos")
-st.write("---")
+VOZES = {
+    "Larissa — feminina natural": "pt-BR-FranciscaNeural",
+    "Julia — feminina suave": "pt-BR-ThalitaMultilingualNeural",
+    "Pedro — masculina": "pt-BR-AntonioNeural",
+    "Narrador — masculino": "pt-BR-FabioNeural",
+    "Outra voz feminina": "pt-BR-BrendaNeural",
+    "Outra voz masculina": "pt-BR-DonatoNeural",
+}
 
-# ABAS
-abas = ["filmes", "series", "novelas", "animes", "desenhos"]
-nomes = ["🎬 Filmes", "📺 Séries", "📖 Novelas", "🎌 Animes", "🎨 Desenhos"]
-colunas_abas = st.columns(5)
-for i, aba in enumerate(abas):
-    with colunas_abas[i]:
-        if st.button(nomes[i], use_container_width=True, type="primary" if st.session_state.aba_atual == aba else "secondary"):
-            st.session_state.aba_atual = aba
-            st.session_state.selected_movie = None
-            st.rerun()
+def gerar_edge(texto, voz, velocidade):
+    async def executar():
+        comunicacao = edge_tts.Communicate(
+            texto,
+            voz,
+            rate=velocidade
+        )
+        audio = bytearray()
+        async for parte in comunicacao.stream():
+            if parte["type"] == "audio":
+                audio.extend(parte["data"])
+        return bytes(audio)
 
-st.write("---")
+    return asyncio.run(executar())
 
-pesquisa = st.text_input("🔎 Pesquisar...")
 
-# =========================
-# EXIBIR DETALHES
-# =========================
-def exibir_detalhes():
-    if st.session_state.selected_movie is None:
-        return
-    
-    item = st.session_state.selected_movie
+def gerar_elevenlabs(texto, voice_id, api_key):
+    url = (
+        "https://api.elevenlabs.io/v1/text-to-speech/"
+        + voice_id
+    )
+
+    resposta = requests.post(
+        url,
+        headers={
+            "xi-api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg",
+        },
+        json={
+            "text": texto,
+            "model_id": "eleven_multilingual_v2",
+        },
+        timeout=120,
+    )
+    resposta.raise_for_status()
+    return resposta.content
+
+
+def nome_arquivo(texto):
+    nome = re.sub(r"[^a-zA-Z0-9_-]", "_", texto)
+    return nome[:40] or "audio"
+
+
+st.title("🎬 RFLIX STUDIO")
+st.caption("Crie diálogos, vozes e narrações para suas novelas.")
+
+pagina = st.sidebar.radio(
+    "MENU",
+    [
+        "🎙️ Estúdio de Vozes",
+        "📖 Roteiro da Novela",
+        "ℹ️ Sobre o projeto",
+    ],
+)
+
+if pagina == "🎙️ Estúdio de Vozes":
+    st.header("🎙️ Gerador de vozes IA")
+
+    mecanismo = st.radio(
+        "Escolha o mecanismo de voz",
+        [
+            "Edge TTS — opção gratuita",
+            "ElevenLabs — voz expressiva",
+        ],
+    )
+
+    if mecanismo.startswith("Edge"):
+        st.info(
+            "Geração online de voz neural. "
+            "Não precisa de chave de API."
+        )
+        voz_nome = st.selectbox(
+            "Escolha a voz",
+            list(VOZES.keys()),
+        )
+        voz = VOZES[voz_nome]
+
+        velocidade = st.select_slider(
+            "Velocidade da fala",
+            options=[
+                "-15%", "-10%", "-5%", "+0%",
+                "+5%", "+10%", "+15%"
+            ],
+            value="+0%",
+        )
+        api_key = ""
+        voice_id = ""
+
+    else:
+        st.info(
+            "Insira sua chave da ElevenLabs nos Secrets "
+            "do Streamlit ou no campo abaixo."
+        )
+
+        api_key = st.text_input(
+            "Chave da API",
+            type="password",
+            value=st.secrets.get("ELEVENLABS_API_KEY", ""),
+        )
+
+        voice_id = st.text_input(
+            "ID da voz da ElevenLabs",
+            placeholder="Cole aqui o ID da voz escolhida",
+        )
+
+        voz = ""
+        velocidade = "+0%"
+
     st.write("---")
-    col_p, col_i = st.columns([1, 2])
-    
-    with col_p:
-        st.image(imagem(item), width=250)
-        st.markdown("<div style='margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;'>" + botao_youtube(item) + botao_vix(item) + "</div>", unsafe_allow_html=True)
-    
-    with col_i:
-        st.subheader(f"🎬 {nome(item)}")
-        st.write(item.get("overview") or "Sem sinopse disponível.")
-        data_info = item.get("release_date") or item.get("first_air_date", "---")
-        st.write(f"📅 Data de lançamento: {data_info}")
-        st.write(f"⭐ Nota: {item.get('vote_average', 0):.1f}/10")
-        
-        if st.button("✖ Fechar detalhes"):
-            st.session_state.selected_movie = None
-            st.rerun()
-    st.write("---")
+    st.subheader("Texto do personagem")
 
-# =========================
-# EXIBIR FILEIRA
-# =========================
-def mostrar_fileira(titulo, lista, chave):
-    st.subheader(titulo)
-    if not lista:
-        st.info("Nenhum resultado encontrado. Verifique seu Token do TMDB nos Secrets do Streamlit!")
-        return
-    cols = st.columns(5)
-    for i, item in enumerate(lista[:20]):
-        item_id = item.get("id")
-        with cols[i % 5]:
-            st.image(imagem(item), use_container_width=True)
-            st.markdown(f"<div class='movie-title'>{nome(item)}</div>", unsafe_allow_html=True)
-            nota = item.get("vote_average", 0)
-            data = item.get("release_date") or item.get("first_air_date", "")
-            st.caption(f"★ {nota:.1f} · {data[:4] if data else ''}")
-            c1, c2 = st.columns(2)
-            with c1:
-                txt = "❤️" if item_id in st.session_state.favoritos else "🤍"
-                if st.button(txt, key=f"fav_{chave}_{item_id}"):
-                    if item_id in st.session_state.favoritos:
-                        st.session_state.favoritos.remove(item_id)
+    personagem = st.text_input(
+        "Nome do personagem",
+        value="Larissa",
+    )
+
+    texto = st.text_area(
+        "Escreva o diálogo ou a narração",
+        height=220,
+        max_chars=5000,
+        placeholder=(
+            "Pedro, eu preciso contar uma coisa...\n"
+            "Eu nunca deixei de te amar."
+        ),
+    )
+
+    if st.button(
+        "🔊 GERAR VOZ",
+        type="primary",
+        use_container_width=True,
+    ):
+        if not texto.strip():
+            st.warning("Escreva um texto antes de gerar.")
+        elif mecanismo.startswith("ElevenLabs") and (
+            not api_key or not voice_id
+        ):
+            st.warning(
+                "Informe a chave da API e o ID da voz."
+            )
+        else:
+            try:
+                with st.spinner(
+                    "Gerando áudio... aguarde."
+                ):
+                    if mecanismo.startswith("Edge"):
+                        audio = gerar_edge(
+                            texto.strip(),
+                            voz,
+                            velocidade,
+                        )
                     else:
-                        st.session_state.favoritos.append(item_id)
-                    st.rerun()
-            with c2:
-                if st.button("▶ Ver", key=f"det_{chave}_{item_id}"):
-                    st.session_state.selected_movie = item
-                    st.rerun()
+                        audio = gerar_elevenlabs(
+                            texto.strip(),
+                            voice_id.strip(),
+                            api_key.strip(),
+                        )
 
-# =========================
-# CONTEÚDO DAS ABAS
-# =========================
-aba = st.session_state.aba_atual
+                if not audio:
+                    st.error(
+                        "O serviço não retornou áudio. "
+                        "Tente novamente."
+                    )
+                else:
+                    st.session_state.audio_gerado = audio
+                    st.session_state.audio_nome = (
+                        nome_arquivo(personagem)
+                    )
+                    st.success("Áudio gerado!")
 
-if aba == "filmes":
-    if pesquisa.strip():
-        res = carregar("/search/movie", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_f")
-    else:
-        mostrar_fileira("🔥 Em Alta", carregar("/trending/movie/week", {"language": "pt-BR"}), "alta_f")
-        mostrar_fileira("🎞️ Populares", carregar("/movie/popular", {"language": "pt-BR"}), "pop_f")
-        mostrar_fileira("⭐ Melhores Avaliados", carregar("/movie/top_rated", {"language": "pt-BR"}), "top_f")
+            except Exception as erro:
+                st.error(
+                    "Não foi possível gerar a voz. "
+                    "Confira sua conexão, a voz escolhida "
+                    "e os limites do serviço."
+                )
+                st.code(str(erro))
 
-elif aba == "series":
-    if pesquisa.strip():
-        res = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_s")
-    else:
-        mostrar_fileira("🔥 Em Alta", carregar("/trending/tv/week", {"language": "pt-BR"}), "alta_s")
-        mostrar_fileira("📺 Populares", carregar("/tv/popular", {"language": "pt-BR"}), "pop_s")
+    if st.session_state.get("audio_gerado"):
+        audio = st.session_state.audio_gerado
+        nome = st.session_state.get(
+            "audio_nome", "personagem"
+        )
 
-elif aba == "novelas":
-    if pesquisa.strip():
-        res = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", res, "busca_n")
-    else:
-        res = carregar("/discover/tv", {"with_genres": "10766", "with_original_language": "pt", "language": "pt-BR"})
-        mostrar_fileira("📖 Novelas Brasileiras", res, "nov_br")
+        st.subheader("🎧 Prévia do áudio")
+        st.audio(audio, format="audio/mpeg")
 
-elif aba == "animes":
-    if pesquisa.strip():
-        res1 = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        res2 = carregar("/search/tv", {"query": pesquisa.strip(), "language": "en-US"})
-        vistos = set()
-        unicos = []
-        for r in res1 + res2:
-            rid = r.get("id")
-            if rid not in vistos:
-                vistos.add(rid)
-                unicos.append(r)
-        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", unicos, "busca_a")
-    else:
-        res = carregar("/discover/tv", {"with_genres": "16", "with_original_language": "ja", "language": "pt-BR"})
-        mostrar_fileira("🎌 Animes Populares", res, "anime_pop")
+        st.download_button(
+            "⬇️ BAIXAR ÁUDIO MP3",
+            data=audio,
+            file_name=f"{nome}.mp3",
+            mime="audio/mpeg",
+            use_container_width=True,
+        )
 
-elif aba == "desenhos":
-    if pesquisa.strip():
-        res1 = carregar("/search/movie", {"query": pesquisa.strip(), "language": "pt-BR"})
-        res2 = carregar("/search/tv", {"query": pesquisa.strip(), "language": "pt-BR"})
-        vistos = set()
-        unicos = []
-        for r in res1 + res2:
-            rid = r.get("id")
-            if rid not in vistos:
-                vistos.add(rid)
-                unicos.append(r)
-        mostrar_fileira(f"🔎 Resultados para: {pesquisa}", unicos, "busca_d")
-    else:
-        res = carregar("/discover/movie", {"with_genres": "16", "language": "pt-BR"})
-        mostrar_fileira("🎬 Filmes de Animação", res, "desenho_f")
-        res_tv = carregar("/discover/tv", {"with_genres": "16", "language": "pt-BR"})
-        mostrar_fileira("📺 Séries de Desenhos", res_tv, "desenho_s")
+elif pagina == "📖 Roteiro da Novela":
+    st.header("📖 Organizador de diálogos")
 
-exibir_detalhes()
+    st.write(
+        "Escreva uma fala por linha, usando o formato "
+        "**Personagem: diálogo**."
+    )
+
+    roteiro = st.text_area(
+        "Roteiro",
+        height=300,
+        placeholder=(
+            "Larissa: Por que você voltou?\n"
+            "Pedro: Voltei porque ainda te amo.\n"
+            "Larissa: Você chegou tarde demais."
+        ),
+    )
+
+    if st.button("📋 ORGANIZAR ROTEIRO"):
+        falas = []
+
+        for linha in roteiro.splitlines():
+            if ":" not in linha:
+                continue
+
+            personagem, fala = linha.split(":", 1)
+
+            if personagem.strip() and fala.strip():
+                falas.append({
+                    "personagem": personagem.strip(),
+                    "fala": fala.strip(),
+                })
+
+        if falas:
+            st.session_state.falas = falas
+            st.success(
+                f"{len(falas)} falas identificadas."
+            )
+            for i, fala in enumerate(falas, 1):
+                st.markdown(
+                    f"**{i}. {fala['personagem']}**: "
+                    f"{fala['fala']}"
+                )
+        else:
+            st.warning(
+                "Nenhuma fala identificada. "
+                "Use Personagem: diálogo."
+            )
+
+    if st.session_state.get("falas"):
+        conteudo = "\n".join(
+            f"{f['personagem']}: {f['fala']}"
+            for f in st.session_state.falas
+        )
+
+        st.download_button(
+            "⬇️ BAIXAR ROTEIRO TXT",
+            data=conteudo,
+            file_name="roteiro_rflix.txt",
+            mime="text/plain",
+        )
+
+elif pagina == "ℹ️ Sobre o projeto":
+    st.header("Sobre a RFlix Studio")
+
+    st.write("""
+    A RFlix Studio é um projeto para produzir novelas,
+    histórias e vídeos com ferramentas de inteligência
+    artificial.
+
+    Recursos desta versão:
+    - Geração de voz neural.
+    - Opção de integração com ElevenLabs.
+    - Organização de roteiros e diálogos.
+    - Download de áudios em MP3.
+
+    A criação de cenas em vídeo e a montagem automática
+    de episódios serão etapas posteriores.
+    """)
 
 st.write("---")
-st.caption("RFlix • Dados da TMDB • ViX e YouTube são marcas independentes • Prefira conteúdo legal e autorizado!")
+st.caption("RFlix Studio • Criação de histórias com IA")
     
